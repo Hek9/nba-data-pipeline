@@ -4,15 +4,17 @@ import pandas as pd
 from nba_api.stats.endpoints import leaguegamefinder
 from nba_api.stats.endpoints import commonallplayers
 
-# --- Cabeceras compartidas para evadir Firewall ---
+# --- Cabeceras compartidas para evadir Firewall (Basado en Repo Oficial) ---
 CUSTOM_HEADERS = {
     'Host': 'stats.nba.com',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://www.nba.com/',
+    'Referer': 'https://www.nba.com/stats/',
     'Origin': 'https://www.nba.com',
-    'Connection': 'keep-alive'
+    'Connection': 'keep-alive',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
 }
 
 def get_data_with_fallback(endpoint_class, output_filename, entity_name):
@@ -24,8 +26,8 @@ def get_data_with_fallback(endpoint_class, output_filename, entity_name):
         print(f"\n--- Iniciando extracción de {entity_name} ---")
         print(f"Intentando conectar a la API de stats.nba.com para {entity_name}...")
         
-        # Timeout de 15s porque si es bloqueo, no responderá
-        api_caller = endpoint_class(headers=CUSTOM_HEADERS, timeout=15)
+        # Eliminamos el timeout para forzar la conexión
+        api_caller = endpoint_class(headers=CUSTOM_HEADERS)
         df = api_caller.get_data_frames()[0]
         
         # Guardado del Parquet en crudo
@@ -66,8 +68,8 @@ if __name__ == "__main__":
     # 1. Extraer Juegos
     extract_nba_games()
     
-    # Pausa intencional para no saturar la API
-    time.sleep(3)
+    # Pausa intencional de 10 segundos para parecer humanos (mejorada)
+    time.sleep(10)
     
     # 2. Extraer Jugadores
     extract_nba_players()
