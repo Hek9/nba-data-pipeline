@@ -13,17 +13,20 @@ password = os.getenv("AZURE_SQL_PASSWORD")
 
 password_encoded = quote_plus(password)
 
+# Mantenemos TrustServerCertificate=yes para evitar bloqueos SSL en GitHub Actions / Cloud
 connection_string = (
     f"mssql+pyodbc://{username}:{password_encoded}@{server}/{database}"
-    "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no"
+    "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=yes"
 )
 
 def transform_nba_data():
-    print("Conectando a Azure SQL Database para ejecutar transformaciones ELT...")
+    print("Conectando a Azure SQL Database para ejecutar transformaciones ELT (Capas Plata y Oro)...")
     engine = create_engine(connection_string)
 
     sql_script = """
-    -- 1. Crear o reemplazar la Tabla de Dimensión: dim_teams
+    -- =========================================================
+    -- 1. CAPA ORO: Dimensión de Equipos (dim_teams)
+    -- =========================================================
     IF OBJECT_ID('dbo.dim_teams', 'U') IS NOT NULL DROP TABLE dbo.dim_teams;
 
     CREATE TABLE dbo.dim_teams (
@@ -42,7 +45,31 @@ def transform_nba_data():
     WHERE TEAM_ID IS NOT NULL
     GROUP BY TEAM_ID;
 
-    -- 2. Crear o reemplazar la Tabla de Hechos: fct_games
+
+    -- =========================================================
+    -- 2. CAPA ORO: Dimensión de Jugadores (dim_players)
+    -- =========================================================
+    IF OBJECT_ID('dbo.dim_players', 'U') IS NOT NULL DROP TABLE dbo.dim_players;
+
+    CREATE TABLE dbo.dim_players (
+        player_id BIGINT NOT NULL,
+        player_name VARCHAR(150) NULL,
+        is_active INT NULL,
+        CONSTRAINT PK_dim_players PRIMARY KEY (player_id)
+    );
+
+    INSERT INTO dbo.dim_players (player_id, player_name, is_active)
+    SELECT DISTINCT
+        CAST(id AS BIGINT) AS player_id,
+        CAST(full_name AS VARCHAR(150)) AS player_name,
+        CAST(is_active AS INT) AS is_active
+    FROM dbo.stg_nba_players
+    WHERE id IS NOT NULL;
+
+
+    -- =========================================================
+    -- 3. CAPA ORO: Tabla de Hechos de Partidos (fct_games)
+    -- =========================================================
     IF OBJECT_ID('dbo.fct_games', 'U') IS NOT NULL DROP TABLE dbo.fct_games;
 
     CREATE TABLE dbo.fct_games (
@@ -55,7 +82,9 @@ def transform_nba_data():
         visitor_team_score INT NULL,
         pts_diff INT NULL,
         home_win INT NULL,
-        CONSTRAINT PK_fct_games PRIMARY KEY (game_id)
+        CONSTRAINT PK_fct_games PRIMARY KEY (game_id),
+        CONSTRAINT FK_fct_home_team FOREIGN KEY (home_team_id) REFERENCES dbo.dim_teams(team_id),
+        CONSTRAINT FK_fct_visitor_team FOREIGN KEY (visitor_team_id) REFERENCES dbo.dim_teams(team_id)
     );
 
     INSERT INTO dbo.fct_games (
@@ -83,10 +112,10 @@ def transform_nba_data():
     try:
         with engine.connect() as connection:
             trans = connection.begin()
-            print("Ejecutando sentencias DDL/DML...")
+            print("Ejecutando sentencias DDL/DML del Esquema Estrella...")
             connection.execute(text(sql_script))
             trans.commit()
-            print("¡Transformación completada exitosamente! Tablas 'dim_teams' y 'fct_games' creadas en Azure SQL.")
+            print("¡Transformación completada exitosamente! Tablas 'dim_teams', 'dim_players' y 'fct_games' creadas e integradas en Azure SQL.")
 
     except Exception as e:
         print(f"Error durante la transformación: {e}")

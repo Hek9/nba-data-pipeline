@@ -1,34 +1,39 @@
 import os
-from dotenv import load_dotenv
 from azure.storage.blob import BlobServiceClient
+from dotenv import load_dotenv
 
-# Cargar credenciales desde el archivo .env
+# Cargar variables de entorno locales si existen
 load_dotenv()
 
-connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+CONTAINER_NAME = "nba-raw-data"
 
-def upload_file_to_azure():
-    container_name = "nba-raw-data"
-    local_file_name = "nba_games_raw.parquet"
-    blob_name = "raw/nba_games_raw.parquet"
+# Lista de archivos que conforman nuestra capa Bronce
+FILES_TO_UPLOAD = [
+    "nba_games_raw.parquet",
+    "nba_players_raw.parquet"
+]
 
-    if not os.path.exists(local_file_name):
-        print(f"Error: El archivo {local_file_name} no existe localmente. Ejecuta primero 01_extract_nba.py")
-        return
+def upload_files_to_blob():
+    print("Iniciando conexión con Azure Blob Storage...")
+    blob_service_client = BlobServiceClient.from_connection_string(CONNECTION_STRING)
+    container_client = blob_service_client.get_container_client(CONTAINER_NAME)
 
-    try:
-        print("Conectando con Azure Blob Storage...")
-        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+    # Crear el contenedor si no existe
+    if not container_client.exists():
+        container_client.create_container()
+        print(f"Contenedor '{CONTAINER_NAME}' creado exitosamente.")
 
-        print(f"Subiendo '{local_file_name}' hacia el contenedor '{container_name}'...")
-        with open(local_file_name, "rb") as data:
-            blob_client.upload_blob(data, overwrite=True)
-
-        print("Carga completada exitosamente en la nube.")
-
-    except Exception as e:
-        print(f"Ocurrió un error al subir el archivo: {e}")
+    for file_name in FILES_TO_UPLOAD:
+        if os.path.exists(file_name):
+            print(f"Subiendo '{file_name}' hacia el contenedor '{CONTAINER_NAME}'...")
+            blob_client = container_client.get_blob_client(file_name)
+            
+            with open(file_name, "rb") as data:
+                blob_client.upload_blob(data, overwrite=True)
+            print(f"✅ ¡{file_name} subido exitosamente a la nube!")
+        else:
+            print(f"❌ Advertencia: No se encontró el archivo local '{file_name}'.")
 
 if __name__ == "__main__":
-    upload_file_to_azure()
+    upload_files_to_blob()

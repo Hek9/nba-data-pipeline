@@ -1,44 +1,39 @@
 import os
 import pandas as pd
-from dotenv import load_dotenv
+import pyodbc
 from sqlalchemy import create_engine
+from dotenv import load_dotenv
 
-# Cargar variables de entorno
 load_dotenv()
 
-server = os.getenv("AZURE_SQL_SERVER")
-database = os.getenv("AZURE_SQL_DATABASE")
-username = os.getenv("AZURE_SQL_USER")
-password = os.getenv("AZURE_SQL_PASSWORD")
+SERVER = os.getenv("AZURE_SQL_SERVER")
+DATABASE = os.getenv("AZURE_SQL_DATABASE")
+USERNAME = os.getenv("AZURE_SQL_USER")
+PASSWORD = os.getenv("AZURE_SQL_PASSWORD")
 
-def load_parquet_to_azure_sql():
-    parquet_file = "nba_games_raw.parquet"
-    
-    if not os.path.exists(parquet_file):
-        print(f"Error: No se encontró {parquet_file} localmente.")
-        return
+# Crear cadena de conexión para SQLAlchemy con ODBC Driver 18
+connection_string = (
+    f"mssql+pyodbc://{USERNAME}:{PASSWORD}@{SERVER}:1433/{DATABASE}"
+    f"?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=yes"
+)
 
-    print("Leyendo datos locales del archivo Parquet...")
+def load_parquet_to_staging(parquet_file, staging_table_name):
+    print(f"\nLeyendo datos locales de '{parquet_file}'...")
     df = pd.read_parquet(parquet_file)
+    
+    # Convertir nombres de columnas a minúsculas por buenas prácticas en SQL
+    df.columns = [col.lower() for col in df.columns]
 
-    # Cadena de conexión usando ODBC Driver 18 o 17 para SQL Server
-    connection_string = (
-        f"mssql+pyodbc://{username}:{password}@{server}/{database}"
-        "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no"
-    )
+    print(f"Conectando a Azure SQL para cargar en la tabla de Staging: [{staging_table_name}]...")
+    engine = create_engine(connection_string)
 
-    try:
-        print("Conectando a Azure SQL Database...")
-        engine = create_engine(connection_string)
-
-        print("Cargando datos a la tabla 'stg_nba_games'...")
-        # Carga los datos en la tabla staging 'stg_nba_games'
-        df.to_sql(name="stg_nba_games", con=engine, if_exists="replace", index=False)
-
-        print("¡Carga exitosa! La tabla 'stg_nba_games' ha sido creada/actualizada en Azure SQL Database.")
-
-    except Exception as e:
-        print(f"Error al conectar o cargar datos a Azure SQL: {e}")
+    # Carga masiva a SQL (si la tabla existe, la reemplaza)
+    df.to_sql(staging_table_name, con=engine, if_exists='replace', index=False, chunksize=1000)
+    print(f"✅ Tabla de Staging '{staging_table_name}' cargada exitosamente con {len(df)} registros.")
 
 if __name__ == "__main__":
-    load_parquet_to_azure_sql()
+    # 1. Cargar Staging de Partidos
+    load_parquet_to_staging("nba_games_raw.parquet", "stg_nba_games")
+    
+    # 2. Cargar Staging de Jugadores
+    load_parquet_to_staging("nba_players_raw.parquet", "stg_nba_players")
