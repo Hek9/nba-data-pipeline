@@ -41,7 +41,7 @@ jobs:
           python 01_extract_nba.py
 
           echo "=== 2/4: Carga a Azure Blob Storage ==="
-          python 02_upload_to_blob.py
+          python 02_upload_to_azure.py
 
           echo "=== 3/4: Carga a Azure SQL (Staging) ==="
           python 03_load_to_sql.py
